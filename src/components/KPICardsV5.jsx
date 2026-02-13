@@ -4,22 +4,21 @@ import { TrendingUp, Wallet, Tag, Target } from 'lucide-react';
 const formatBRL = (v) =>
   (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-export const KPICardsV5 = ({ metricas, goal, onChangeGoal }) => {
+export const KPICardsV5 = ({ metricas, goalInput, onChangeGoal }) => {
   const vendido = metricas?.vendidoMes ?? 0;
   const pendencias = metricas?.pendenciasValor ?? 0;
   const comissao = metricas?.comissaoMes ?? 0;
   const descontos = metricas?.descontosMes ?? 0;
   const qtd = metricas?.contagemMes ?? 0;
 
-  const meta = Number(goal) || 0;
+  const meta = Number(String(goalInput || '').replace(/[^0-9]/g, '')) || 0;
   const falta = meta > 0 ? Math.max(0, meta - vendido) : 0;
   const percent = meta > 0 ? Math.min(100, (vendido / meta) * 100) : 0;
-  const inputValue = goal !== undefined && goal !== null && goal !== '' ? String(goal) : '';
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* Vendido */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
         <div className="flex items-start justify-between">
           <div className="p-2 rounded-lg bg-green-50">
             <TrendingUp className="w-5 h-5 text-green-600" />
@@ -33,7 +32,7 @@ export const KPICardsV5 = ({ metricas, goal, onChangeGoal }) => {
       </div>
 
       {/* Meta */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
         <div className="flex items-start justify-between">
           <div className="p-2 rounded-lg bg-blue-50">
             <Target className="w-5 h-5 text-blue-600" />
@@ -46,10 +45,9 @@ export const KPICardsV5 = ({ metricas, goal, onChangeGoal }) => {
           <div className="mt-3">
             <label className="text-xs text-gray-500">Editar meta</label>
             <input
-              className="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+              className="mt-1 w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
               inputMode="numeric"
-              type="text"
-              value={inputValue}
+              value={goalInput ?? ''}
               onChange={(e) => onChangeGoal?.(e.target.value)}
               placeholder="10000"
             />
@@ -64,7 +62,7 @@ export const KPICardsV5 = ({ metricas, goal, onChangeGoal }) => {
       </div>
 
       {/* Comissão */}
-      <div className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl shadow-sm border border-purple-500/20 p-4 text-white">
+      <div className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-2xl shadow-sm border border-purple-500/20 p-5 text-white">
         <div className="flex items-start justify-between">
           <div className="p-2 rounded-lg bg-white/15">
             <Wallet className="w-5 h-5 text-white" />
@@ -85,7 +83,7 @@ export const KPICardsV5 = ({ metricas, goal, onChangeGoal }) => {
       </div>
 
       {/* Descontos / Pendências */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
         <div className="flex items-start justify-between">
           <div className="p-2 rounded-lg bg-amber-50">
             <Tag className="w-5 h-5 text-amber-600" />

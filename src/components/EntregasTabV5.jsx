@@ -1,20 +1,8 @@
 import React from 'react';
-import { Calendar, Clock, Truck, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 const formatBRL = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 
-const getPredictedDate = (saleDate, days) => {
-  if (!saleDate || !days) return null;
-  const date = new Date(saleDate + 'T00:00:00');
-  date.setDate(date.getDate() + Number(days));
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
 const daysDiff = (iso) => {
-  if (!iso) return 0;
   const d = new Date(iso + 'T00:00:00').getTime();
   const today = new Date(); today.setHours(0,0,0,0);
   const diff = Math.round((d - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -23,83 +11,42 @@ const daysDiff = (iso) => {
 
 export const EntregasTabV5 = ({ vendas, onMarcarEntregue, onEdit, onCancel, onDelete }) => {
   return (
-    <div className="p-4 pb-32 space-y-4">
+    <div className="p-4 pb-24 space-y-3">
       {(!vendas || vendas.length === 0) && (
-        <div className="bg-white border-2 border-dashed border-gray-100 rounded-3xl p-12 text-center">
-          <div className="text-blue-200 mb-2 flex justify-center"><Truck size={48} /></div>
-          <p className="text-gray-400 font-bold">Nenhuma entrega futura pendente.</p>
-        </div>
+        <div className="bg-white border rounded-2xl p-4 text-center text-gray-500">Nenhuma entrega futura</div>
       )}
 
       {vendas?.map((v) => {
-        const isFutura = v.tipoEntrega === 'Futura';
-        const predictedDate = isFutura ? getPredictedDate(v.data, v.deliveryDeadlineDays) : v.dataEntrega;
-        const diff = predictedDate ? daysDiff(predictedDate) : null;
-        const isAtrasada = diff !== null && diff < 0;
+        const label = v.tipoEntrega === 'Agendada' && v.dataEntrega ? `📅 ${new Date(v.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR')}` : '🏭 Produção / Futura';
+        const d = (v.tipoEntrega === 'Agendada' && v.dataEntrega) ? daysDiff(v.dataEntrega) : null;
+        const urgency = d !== null ? (d < 0 ? 'border-red-400 bg-red-50' : d <= 7 ? 'border-yellow-400 bg-yellow-50' : 'border-green-400 bg-green-50') : 'border-blue-200 bg-blue-50';
 
         return (
-          <div key={v.id} className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm hover:shadow-md transition-all">
+          <div key={v.id} className={`border rounded-2xl p-4 bg-white`}>
             <div className="flex justify-between items-start gap-3">
               <div className="min-w-0">
-                <div className="font-black text-gray-900 text-lg truncate">{v.cliente}</div>
-                <div className="text-xs text-gray-500 font-bold mt-1">{v.produtos || 'Sem descrição'}</div>
+                <div className="font-extrabold text-gray-900 truncate">{v.cliente}</div>
+                <div className="text-xs text-gray-500 whitespace-pre-line">{v.produtos}</div>
               </div>
               <div className="text-right">
-                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Venda</div>
-                <div className="font-black text-gray-900">{new Date(v.data + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
+                <div className="text-xs text-gray-500">{v.data}</div>
+                <div className="font-extrabold">{formatBRL(v.valor)}</div>
               </div>
             </div>
 
-            <div className={`mt-4 rounded-2xl p-4 border ${isAtrasada ? 'bg-red-50 border-red-100' : 'bg-blue-50 border-blue-100'}`}>
-              <div className="flex justify-between items-center mb-3">
-                <div className="flex items-center gap-2">
-                  {isAtrasada ? <AlertTriangle className="text-red-500" size={18} /> : <Clock className="text-blue-500" size={18} />}
-                  <span className={`text-xs font-black uppercase tracking-wider ${isAtrasada ? 'text-red-700' : 'text-blue-700'}`}>
-                    {isFutura ? `Prazo: ${v.deliveryDeadlineDays} dias` : 'Agendada'}
-                  </span>
-                </div>
-                {isAtrasada && (
-                  <span className="bg-red-600 text-white text-[10px] font-black px-2 py-1 rounded-md uppercase animate-pulse">
-                    Atrasada
-                  </span>
-                )}
+            <div className={`mt-3 ${urgency} border rounded-xl p-3 text-sm`}>
+              <div className="flex justify-between">
+                <span className="font-bold">{label}</span>
+                {d !== null && <span className="text-xs font-bold">{d < 0 ? `Atrasada ${Math.abs(d)}d` : `${d}d`}</span>}
               </div>
-
-              <div className="flex justify-between items-end">
-                <div>
-                  <div className="text-[10px] font-bold text-gray-400 uppercase">Previsão</div>
-                  <div className={`text-lg font-black ${isAtrasada ? 'text-red-600' : 'text-blue-900'}`}>
-                    {predictedDate ? new Date(predictedDate + 'T00:00:00').toLocaleDateString('pt-BR') : 'A definir'}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[10px] font-bold text-gray-400 uppercase">Faltam</div>
-                  <div className={`text-lg font-black ${isAtrasada ? 'text-red-600' : 'text-blue-900'}`}>
-                    {diff !== null ? (isAtrasada ? `${Math.abs(diff)}d` : `${diff}d`) : '--'}
-                  </div>
-                </div>
-              </div>
-
-              {(v.deliveryReason || v.motivoEntrega) && (
-                <div className="mt-3 pt-3 border-t border-blue-200/30 text-xs font-medium text-blue-800 italic">
-                  "{v.deliveryReason || v.motivoEntrega}"
-                </div>
-              )}
+              {v.motivoEntrega && <div className="text-xs text-gray-700 mt-1">Motivo: {v.motivoEntrega}</div>}
             </div>
 
-            <div className="mt-4 flex gap-2">
-              <button 
-                onClick={() => onMarcarEntregue?.(v)} 
-                className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-2xl font-black text-sm shadow-lg shadow-blue-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-              >
-                <CheckCircle2 size={18} /> Concluir Entrega
-              </button>
-              <button 
-                onClick={() => onEdit?.(v)} 
-                className="flex-1 bg-gray-50 hover:bg-gray-100 text-gray-600 py-3 rounded-2xl font-black text-sm border border-gray-100 transition-all"
-              >
-                Editar
-              </button>
+            <div className="mt-3 flex gap-2">
+              <button onClick={() => onMarcarEntregue?.(v)} className="flex-1 bg-blue-600 text-white py-2 rounded-xl font-bold">Marcar entregue</button>
+              <button onClick={() => onEdit?.(v)} className="px-3 py-2 rounded-xl border bg-white font-bold">Editar</button>
+              <button onClick={() => onCancel?.(v)} className="px-3 py-2 rounded-xl border bg-white font-bold text-orange-600">Cancelar</button>
+              <button onClick={() => onDelete?.(v.id)} className="px-3 py-2 rounded-xl border bg-white font-bold text-red-600">Apagar</button>
             </div>
           </div>
         );
