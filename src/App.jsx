@@ -6,8 +6,7 @@ import { KPICardsV5 } from './components/KPICardsV5';
 import { TabNavigatorV5 } from './components/TabNavigatorV5';
 import { PendenciasTabV5 } from './components/PendenciasTabV5';
 import { EntregasTabV5 } from './components/EntregasTabV5';
-import { FormViewV5 } from './components/FormViewV5';
-import { Trash2, Edit, Plus, List, BarChart, Filter, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, Edit, Plus, List, BarChart, Filter, Calendar } from 'lucide-react';
 
 // --- UTILITÁRIOS ---
 const formatBRL = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
@@ -61,9 +60,6 @@ const normalizarPagamentoDetalhe = (str) => {
   if (s.includes('pix') && s.includes('cnpj')) return 'Pix • CNPJ';
   if (s.includes('deb')) return 'Débito';
   if (s.includes('din')) return 'Dinheiro';
-  if (s.includes('boleto')) return 'Boleto';
-  if (s.includes('link')) return 'Link de pagamento';
-  if (s.includes('transfer')) return 'Transferência';
   const m = s.match(/(\d+)\s*x/);
   if (s.includes('cred') || s.includes('créd') || s.includes('cart')) {
     const parcelas = m ? Math.min(12, Math.max(1, Number(m[1]))) : 1;
@@ -73,11 +69,7 @@ const normalizarPagamentoDetalhe = (str) => {
 };
 
 const descontoOptions = ['Sem desconto', 'Preço de tabela', 'Acima da tabela', '10%', '15%'];
-const pagamentoOptions = [
-  'Pix • QR Code', 'Pix • CNPJ', 'Débito', 'Dinheiro', 'Boleto', 'Link de pagamento', 'Transferência',
-  'Crédito (1x)', 'Crédito (2x)', 'Crédito (3x)', 'Crédito (4x)', 'Crédito (5x)', 'Crédito (6x)',
-  'Crédito (7x)', 'Crédito (8x)', 'Crédito (9x)', 'Crédito (10x)', 'Crédito (11x)', 'Crédito (12x)',
-];
+const pagamentoOptions = ['Pix • QR Code', 'Pix • CNPJ', 'Crédito (1x)', 'Crédito (2x)', 'Crédito (3x)', 'Crédito (4x)', 'Crédito (5x)', 'Crédito (6x)', 'Crédito (7x)', 'Crédito (8x)', 'Crédito (9x)', 'Crédito (10x)', 'Crédito (11x)', 'Crédito (12x)', 'Débito', 'Dinheiro'];
 
 const motivoPendenciaOptions = [
   { value: 'aguardando_cartao', label: '💳 Aguardando cartão virar' },
@@ -101,26 +93,21 @@ export default function App() {
     produtos: '',
 
     valor: '',
+    valorEntrada: '',
     percentual: '5',
 
-    // v5 fields — valores e desconto (não confundir com pendência)
+    // v5 fields
     valorTabela: '',
     descontoAplicado: 'Sem desconto',
-    descontoValorReais: '', // opcional: desconto em R$ (sobrescreve %)
+    pagamentoDetalhe: 'Pix • QR Code',
 
-    // pagamento: único ou dividido
-    modoPagamento: 'unico', // 'unico' | 'dividido'
-    valorEntrada: '', // no modo único = "valor pago agora" (vazio = total)
-    pagamentoDetalhe: 'Pix • QR Code', // forma no modo único
-    paymentParts: [{ method: 'Pix • QR Code', amount: '' }], // modo dividido: [{ method, amount }]
-
-    // pendência (só aparece se restante > 0)
+    // pendency extra
     motivoPendencia: 'aguardando_cartao',
     textoMotivo: '',
     previsaoPagamento: '',
 
     // delivery
-    tipoEntrega: 'Imediata',
+    tipoEntrega: 'Imediata', // Imediata | Agendada | Futura
     dataEntrega: '',
     motivoEntrega: '',
 
@@ -136,40 +123,26 @@ export default function App() {
 
   // Meta mensal (persistida por mês no localStorage)
   const goalKey = (month) => `cv_goal_${month}`;
-  // Guardamos como string para permitir digitação livre (ex.: apagar, digitar devagar),
-  // e persistimos como número ao salvar.
-  const [monthlyGoalInput, setMonthlyGoalInput] = useState(() => {
+  const [monthlyGoal, setMonthlyGoal] = useState(() => {
     try {
-      const saved = localStorage.getItem(goalKey(localStorage.getItem('active_month') || getLocalMonthKey()));
-      return saved !== null ? String(saved) : '10000';
+      const saved = localStorage.getItem(goalKey(new Date().toISOString().slice(0, 7)));
+      const n = Number(saved);
+      return Number.isFinite(n) ? n : 10000; // padrão
     } catch {
-      return '10000';
+      return 10000;
     }
   });
-
-  const monthlyGoal = Number(String(monthlyGoalInput).replace(/[^0-9]/g, '')) || 0;
 
   // Quando mudar o mês ativo, carregar a meta daquele mês (ou manter padrão)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(goalKey(activeMonth));
-      setMonthlyGoalInput(saved !== null ? String(saved) : '10000');
+      const n = Number(saved);
+      setMonthlyGoal(Number.isFinite(n) ? n : 10000);
     } catch {
-      setMonthlyGoalInput('10000');
+      setMonthlyGoal(10000);
     }
   }, [activeMonth]);
-
-  // Persistir meta do mês atual sempre que o usuário editar
-  useEffect(() => {
-    try {
-      const onlyDigits = String(monthlyGoalInput || '').replace(/[^0-9]/g, '');
-      // Se vazio, não sobrescreve imediatamente com 0; permite o usuário digitar.
-      if (onlyDigits === '') return;
-      localStorage.setItem(goalKey(activeMonth), onlyDigits);
-    } catch {
-      // ignore
-    }
-  }, [monthlyGoalInput, activeMonth]);
 
   const [filtros, setFiltros] = useState({
     cliente: '',
@@ -225,16 +198,12 @@ export default function App() {
       cliente: '',
       produtos: '',
       valor: '',
+      valorEntrada: '',
       percentual: '5',
 
       valorTabela: '',
       descontoAplicado: 'Sem desconto',
-      descontoValorReais: '',
-
-      modoPagamento: 'unico',
-      valorEntrada: '',
       pagamentoDetalhe: 'Pix • QR Code',
-      paymentParts: [{ method: 'Pix • QR Code', amount: '' }],
 
       motivoPendencia: 'aguardando_cartao',
       textoMotivo: '',
@@ -334,49 +303,24 @@ export default function App() {
       return;
     }
 
-    // valorTabela é referência (não entra nos cálculos)
+    // valorTabela é referência (não entra nos cálculos), mas deve ser coerente
     let valorTabela = toMoney(formData.valorTabela);
     if (!Number.isFinite(valorTabela) || valorTabela <= 0) valorTabela = valorNum;
 
-    // Desconto: % (10%/15%) ou valor em R$
-    let descontoValor = 0;
-    const descReais = toMoney(formData.descontoValorReais);
-    if (Number.isFinite(descReais) && descReais > 0) {
-      descontoValor = Math.min(descReais, valorNum);
-    } else if (formData.descontoAplicado === '10%') {
-      descontoValor = round2(valorNum * 0.1);
-    } else if (formData.descontoAplicado === '15%') {
-      descontoValor = round2(valorNum * 0.15);
+    // Entrada
+    const isEntradaVazia = formData.valorEntrada === null || formData.valorEntrada === undefined || String(formData.valorEntrada).trim() === '';
+    let entradaNum = isEntradaVazia ? valorNum : toMoney(formData.valorEntrada);
+
+    if (Number.isNaN(entradaNum) || entradaNum < 0) {
+      alert('Erro: Entrada inválida.');
+      return;
     }
-    const totalAReceber = round2(Math.max(0, valorNum - descontoValor));
-
-    // Total pago (único ou dividido)
-    let totalPago = 0;
-    let paymentPartsToSave = [];
-
-    if (formData.modoPagamento === 'unico') {
-      const isValorPagoVazio = formData.valorEntrada === null || formData.valorEntrada === undefined || String(formData.valorEntrada).trim() === '';
-      totalPago = isValorPagoVazio ? totalAReceber : toMoney(formData.valorEntrada);
-      if (Number.isNaN(totalPago) || totalPago < 0) totalPago = totalAReceber;
-      if (totalPago > totalAReceber) totalPago = totalAReceber;
-      paymentPartsToSave = [{ method: normalizarPagamentoDetalhe(formData.pagamentoDetalhe), amount: totalPago }];
-    } else {
-      for (const p of formData.paymentParts || []) {
-        const a = toMoney(p.amount);
-        if (Number.isFinite(a) && a > 0) {
-          totalPago += a;
-          paymentPartsToSave.push({ method: normalizarPagamentoDetalhe(p.method), amount: a });
-        }
-      }
-      totalPago = round2(totalPago);
-      if (totalPago > totalAReceber) {
-        alert(`Total pago (${formatBRL(totalPago)}) não pode ser maior que o total a receber (${formatBRL(totalAReceber)}). Ajuste os valores.`);
-        return;
-      }
+    if (entradaNum > valorNum) {
+      alert(`Erro: Entrada (${formatBRL(entradaNum)}) maior que total (${formatBRL(valorNum)}).`);
+      return;
     }
 
-    const restante = round2(totalAReceber - totalPago);
-    const entradaNum = totalPago; // compatibilidade: valorEntrada = total pago
+    const restante = round2(valorNum - entradaNum);
 
     // Entrega
     if (formData.tipoEntrega === 'Agendada') {
@@ -420,9 +364,7 @@ export default function App() {
       motivoEntrega = String(formData.motivoEntrega || '').trim();
     }
 
-    const pagamentoDetalhe = paymentPartsToSave.length === 1
-      ? paymentPartsToSave[0].method
-      : 'Misto';
+    const pagamentoDetalhe = normalizarPagamentoDetalhe(formData.pagamentoDetalhe);
 
     const vendaObj = {
       data: formData.data,
@@ -439,7 +381,6 @@ export default function App() {
       valorTabela,
       descontoAplicado: formData.descontoAplicado || 'Sem desconto',
       pagamentoDetalhe,
-      paymentParts: paymentPartsToSave,
 
       motivoPendencia,
       textoMotivo,
@@ -478,23 +419,15 @@ export default function App() {
   };
 
   const handleEdit = (venda) => {
-    const parts = venda.paymentParts && Array.isArray(venda.paymentParts) && venda.paymentParts.length > 0
-      ? venda.paymentParts.map((p) => ({ method: p.method || 'Pix • QR Code', amount: String(p.amount ?? '') }))
-      : [{ method: venda.pagamentoDetalhe || 'Pix • QR Code', amount: String(venda.valorEntrada ?? venda.valor ?? '') }];
-    const modoPagamento = parts.length > 1 ? 'dividido' : 'unico';
-
     setFormData({
       ...formData,
       ...venda,
       valor: String(venda.valor ?? ''),
+      valorEntrada: String(venda.valorEntrada === 0 ? '0' : (venda.valorEntrada ?? '')),
       valorTabela: String(venda.valorTabela ?? ''),
       percentual: String(venda.percentual ?? '5'),
       descontoAplicado: venda.descontoAplicado || 'Sem desconto',
-      descontoValorReais: '',
-      modoPagamento,
-      valorEntrada: modoPagamento === 'unico' ? String(venda.valorEntrada === 0 ? '0' : (venda.valorEntrada ?? '')) : '',
       pagamentoDetalhe: venda.pagamentoDetalhe || 'Pix • QR Code',
-      paymentParts: parts,
       previsaoPagamento: venda.previsaoPagamento || '',
       textoMotivo: venda.textoMotivo || '',
       motivoPendencia: venda.motivoPendencia || 'aguardando_cartao',
@@ -681,10 +614,6 @@ export default function App() {
             valorTabela,
             descontoAplicado,
 
-            paymentParts: Array.isArray(item.paymentParts) && item.paymentParts.length > 0
-              ? item.paymentParts.map((p) => ({ method: p.method || pagamentoDetalhe, amount: Number(p.amount) || 0 }))
-              : [{ method: pagamentoDetalhe, amount: valorEntrada }],
-
             motivoPendencia,
             textoMotivo,
             previsaoPagamento,
@@ -792,150 +721,353 @@ END:VCALENDAR`;
   const handleNextMonth = () => setActiveMonth(intToMonth(monthToInt(activeMonth) + 1));
 
   // --- UI (Form/List/Reports) ---
-  // FormView foi extraído para componente separado (evita perder foco ao digitar)
+  const FormView = () => {
+    const valorSeguro = Number(formData.valor) || 0;
+    const entradaValor = toMoney(formData.valorEntrada);
+    const entradaSegura = Number.isNaN(entradaValor) ? valorSeguro : entradaValor;
+    const faltaPagar = Math.max(0, valorSeguro - entradaSegura);
+    const comissaoEstimada = valorSeguro * (Number(formData.percentual) / 100);
 
-  const statusPillClass = (status) => {
-    const s = String(status || '').toLowerCase();
-    if (s.includes('pago')) return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-    if (s.includes('pendente') || s.includes('totalmente')) return 'bg-amber-100 text-amber-700 border-amber-200';
-    if (s.includes('parcial')) return 'bg-blue-100 text-blue-700 border-blue-200';
-    return 'bg-slate-100 text-slate-700 border-slate-200';
+    return (
+      <div className="p-4 max-w-2xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 mt-6 mb-28">
+        <h2 className="text-xl font-extrabold mb-4 text-gray-900">{editingId ? 'Editar Venda' : 'Nova Venda'}</h2>
+
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-gray-700">Data</label>
+              <input type="date" className="w-full p-3 border rounded-xl" value={formData.data} onChange={(e) => setFormData({ ...formData, data: e.target.value })} required />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-700">Cliente</label>
+              <input type="text" className="w-full p-3 border rounded-xl" placeholder="Nome do cliente" value={formData.cliente} onChange={(e) => setFormData({ ...formData, cliente: e.target.value })} required />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-gray-700">Produtos / Descrição</label>
+            <textarea className="w-full p-3 border rounded-xl" rows="3" placeholder="Ex: Colchão Queen + box..." value={formData.produtos} onChange={(e) => setFormData({ ...formData, produtos: e.target.value })} />
+          </div>
+
+          <div className="bg-gray-50 border rounded-2xl p-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-gray-700">Valor vendido</label>
+                <input type="number" step="0.01" className="w-full p-3 border rounded-xl bg-white font-extrabold" value={formData.valor} onChange={(e) => setFormData({ ...formData, valor: e.target.value })} placeholder="0,00" required />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-700">Entrada</label>
+                <input type="number" step="0.01" className="w-full p-3 border rounded-xl bg-white" value={formData.valorEntrada} onChange={(e) => setFormData({ ...formData, valorEntrada: e.target.value })} placeholder="Igual total" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-gray-700">Valor de tabela</label>
+                <input type="number" step="0.01" className="w-full p-3 border rounded-xl bg-white" value={formData.valorTabela} onChange={(e) => setFormData({ ...formData, valorTabela: e.target.value })} placeholder="Referência" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-700">Desconto aplicado</label>
+                <select className="w-full p-3 border rounded-xl bg-white" value={formData.descontoAplicado} onChange={(e) => setFormData({ ...formData, descontoAplicado: e.target.value })}>
+                  {descontoOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {faltaPagar > 0 ? (
+              <div className="bg-orange-50 border border-orange-200 text-orange-800 p-3 rounded-xl text-sm font-bold">
+                Pendência: {formatBRL(faltaPagar)}
+              </div>
+            ) : (
+              <div className="bg-green-50 border border-green-200 text-green-800 p-3 rounded-xl text-sm font-bold">
+                Totalmente pago ✅
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-gray-700">Comissão</label>
+              <select className="w-full p-3 border rounded-xl bg-white" value={formData.percentual} onChange={(e) => setFormData({ ...formData, percentual: e.target.value })}>
+                {[6, 5, 4, 3].map((n) => <option key={n} value={n}>{n}%</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-700">Pagamento</label>
+              <select className="w-full p-3 border rounded-xl bg-white" value={formData.pagamentoDetalhe} onChange={(e) => setFormData({ ...formData, pagamentoDetalhe: e.target.value })}>
+                {pagamentoOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {faltaPagar > 0 && (
+            <div className="bg-white border rounded-2xl p-4 space-y-3">
+              <div>
+                <label className="text-xs font-bold text-gray-700">Motivo da pendência</label>
+                <select className="w-full p-3 border rounded-xl bg-white" value={formData.motivoPendencia} onChange={(e) => setFormData({ ...formData, motivoPendencia: e.target.value })}>
+                  {motivoPendenciaOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              {formData.motivoPendencia === 'outro' && (
+                <input type="text" className="w-full p-3 border rounded-xl" placeholder="Descreva o motivo..." value={formData.textoMotivo} onChange={(e) => setFormData({ ...formData, textoMotivo: e.target.value })} />
+              )}
+              <div>
+                <label className="text-xs font-bold text-gray-700">Previsão de pagamento</label>
+                <input type="date" className="w-full p-3 border rounded-xl" value={formData.previsaoPagamento} onChange={(e) => setFormData({ ...formData, previsaoPagamento: e.target.value })} />
+              </div>
+            </div>
+          )}
+
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
+            <div>
+              <label className="text-xs font-bold text-gray-700">Entrega</label>
+              <select className="w-full p-3 border rounded-xl bg-white" value={formData.tipoEntrega} onChange={(e) => handleTipoEntregaChange(e.target.value)}>
+                <option value="Imediata">📦 Imediata</option>
+                <option value="Agendada">📅 Agendada</option>
+                <option value="Futura">🏭 Futura (produção)</option>
+              </select>
+            </div>
+
+            {formData.tipoEntrega === 'Agendada' && (
+              <div>
+                <label className="text-xs font-bold text-gray-700">Data da entrega</label>
+                <input type="date" className="w-full p-3 border rounded-xl bg-white" value={formData.dataEntrega} onChange={(e) => setFormData({ ...formData, dataEntrega: e.target.value })} required />
+              </div>
+            )}
+
+            {formData.tipoEntrega === 'Futura' && (
+              <div>
+                <label className="text-xs font-bold text-gray-700">Motivo (produção / espera)</label>
+                <input type="text" className="w-full p-3 border rounded-xl bg-white" value={formData.motivoEntrega} onChange={(e) => setFormData({ ...formData, motivoEntrega: e.target.value })} placeholder="Ex: Produção na fábrica / Cliente aguardando obra" />
+              </div>
+            )}
+          </div>
+
+          <div className="bg-gray-50 border rounded-2xl p-4 flex justify-between items-center">
+            <div>
+              <div className="text-xs text-gray-500">Comissão prevista</div>
+              <div className="text-2xl font-extrabold text-green-700">{formatBRL(comissaoEstimada)}</div>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            {editingId && (
+              <button type="button" onClick={() => { setEditingId(null); limparForm(); setView('dashboard'); }} className="flex-1 bg-gray-200 py-3 rounded-2xl font-extrabold">
+                Cancelar
+              </button>
+            )}
+            <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-2xl font-extrabold text-lg">
+              Salvar
+            </button>
+          </div>
+        </form>
+      </div>
+    );
   };
 
   const VendaCard = ({ v }) => {
-    const statusLabel = v.tipoEntrega === 'Agendada' && v.dataEntrega ? 'Agendada' : (v.statusPagamento || '—');
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col gap-4">
-        <div className="flex justify-between items-start gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="font-bold text-slate-900 text-lg truncate">{v.cliente}</div>
-            <div className="text-sm text-slate-500 whitespace-pre-line line-clamp-2 mt-0.5">{v.produtos || '—'}</div>
+      <div className="bg-white p-4 rounded-2xl shadow-sm border flex flex-col gap-3">
+        <div className="flex justify-between items-start">
+          <div className="min-w-0">
+            <div className="font-extrabold text-gray-900 text-lg truncate">{v.cliente}</div>
+            <div className="text-xs text-gray-500 whitespace-pre-line">{v.produtos}</div>
           </div>
-          <div className="flex flex-col items-end shrink-0">
-            <span className={`text-xs font-bold px-3 py-1 rounded-full border ${statusPillClass(statusLabel)}`}>
-              {statusLabel}
-            </span>
-            <span className="text-xs text-slate-500 mt-2">{new Date(v.data + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+          <div className="text-xs bg-gray-100 px-2 py-1 rounded-xl">{new Date(v.data + 'T00:00:00').toLocaleDateString('pt-BR').slice(0,5)}</div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div className="bg-gray-50 border rounded-xl p-2">
+            <div className="text-xs text-gray-500">Total</div>
+            <div className="font-extrabold">{formatBRL(v.valor)}</div>
+          </div>
+          <div className="bg-gray-50 border rounded-xl p-2">
+            <div className="text-xs text-gray-500">Comissão ({v.percentual}%)</div>
+            <div className="font-extrabold text-green-700">{formatBRL(v.comissao)}</div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-            <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Total</div>
-            <div className="text-right font-semibold text-slate-900 mt-0.5">{formatBRL(v.valor)}</div>
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-2 text-sm">
+          <div className="flex justify-between">
+            <span className="font-bold">Pagamento</span>
+            <span className="text-gray-700">{v.pagamentoDetalhe}</span>
           </div>
-          <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-            <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Comissão ({v.percentual}%)</div>
-            <div className="text-right font-semibold text-emerald-700 mt-0.5">{formatBRL(v.comissao)}</div>
-          </div>
-        </div>
-
-        <div className="bg-slate-50/80 border border-slate-100 rounded-xl p-3 text-sm">
-          <div className="flex justify-between items-center">
-            <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Pagamento</span>
-            <span className="font-semibold text-slate-700">{v.pagamentoDetalhe}</span>
-          </div>
-          <div className="flex justify-between items-center mt-2">
-            <span className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Desconto</span>
-            <span className="font-semibold text-slate-700">{v.descontoAplicado}</span>
+          <div className="flex justify-between mt-1">
+            <span className="font-bold">Desconto</span>
+            <span className="text-gray-700">{v.descontoAplicado}</span>
           </div>
         </div>
 
         {v.tipoEntrega === 'Agendada' && v.dataEntrega && (
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm flex justify-between items-center">
-            <span className="font-semibold text-amber-800">Entrega: {new Date(v.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
-            <button type="button" onClick={() => downloadIcs(v)} className="text-blue-600 font-bold flex items-center gap-1.5 hover:bg-blue-50 rounded-lg px-2 py-1 transition-colors">
-              <Calendar size={16} /> ICS
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-2 text-sm flex justify-between items-center">
+            <span className="font-bold">Entrega: {new Date(v.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
+            <button type="button" onClick={() => downloadIcs(v)} className="text-blue-700 font-bold flex items-center gap-1">
+              <Calendar size={18} /> ICS
             </button>
           </div>
         )}
 
-        <div className="flex justify-end items-center pt-3 border-t border-slate-100 gap-2">
-          <button onClick={() => handleEdit(v)} className="p-2.5 rounded-xl text-blue-600 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 transition-all" title="Editar">
-            <Edit size={18} />
-          </button>
-          <button onClick={() => handleDelete(v.id)} className="p-2.5 rounded-xl text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-all" title="Excluir">
-            <Trash2 size={18} />
-          </button>
+        <div className="flex justify-between items-center pt-2 border-t">
+          <div className="text-xs text-gray-500">
+            Status: <span className="font-bold">{v.statusPagamento}</span>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => handleEdit(v)} className="text-blue-600"><Edit size={18} /></button>
+            <button onClick={() => handleDelete(v.id)} className="text-red-600"><Trash2 size={18} /></button>
+          </div>
         </div>
       </div>
     );
   };
 
-  const monthLabel = (() => {
-    const [y, m] = activeMonth.split('-').map(Number);
-    return new Date(y, m - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-  })();
+  const UpcomingDeliveries = () => {
+  const entregas = separarVendas.entregas
+    .filter((v) => (v.entregaFutura === true || v.dataEntrega) && !v.entregue)
+    .slice()
+    .sort((a, b) => String(a.dataEntrega || '').localeCompare(String(b.dataEntrega || '')));
 
-  const DashboardView = () => (
-    <div className="pb-28 pt-6">
-      {/* Navegação do mês */}
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-bold text-slate-800 capitalize">{monthLabel}</h2>
-        <div className="flex items-center gap-1 bg-white rounded-full border border-slate-200 shadow-sm p-1">
-          <button type="button" onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-slate-100 text-slate-600 transition-colors" aria-label="Mês anterior">
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <button type="button" onClick={handleNextMonth} className="p-2 rounded-full hover:bg-slate-100 text-slate-600 transition-colors" aria-label="Próximo mês">
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        </div>
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-extrabold text-slate-900">Próximas Entregas</h3>
+        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+          {entregas.length}
+        </span>
       </div>
 
-      <div className="mb-6">
-        <KPICardsV5 metricas={metricas} goalInput={monthlyGoalInput} onChangeGoal={setMonthlyGoalInput} />
-      </div>
+      <div className="mt-4 max-h-[420px] overflow-auto pr-1 space-y-3">
+        {entregas.length === 0 && (
+          <div className="text-sm text-slate-500 text-center py-6">Sem entregas futuras.</div>
+        )}
 
-      {/* Barra de filtros premium */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-6">
-        <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
-          <div className="flex-1 flex gap-2 flex-wrap">
-            <input
-              type="text"
-              placeholder="Pesquisar cliente..."
-              className="flex-1 min-w-[180px] p-3 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50/50"
-              value={filtros.cliente}
-              onChange={(e) => setFiltros((prev) => ({ ...prev, cliente: e.target.value }))}
-            />
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`p-3 rounded-xl border font-bold transition-all flex items-center gap-2 ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
-            >
-              <Filter size={18} /> Filtros
-            </button>
-          </div>
-          {showFilters && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">De</label>
-                <input type="date" className="w-full border border-slate-200 rounded-xl p-2.5 text-sm" value={filtros.dataIni} onChange={(e) => setFiltros((prev) => ({ ...prev, dataIni: e.target.value }))} />
+        {entregas.map((v) => (
+          <div key={v.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-extrabold text-slate-900 truncate">{v.cliente || 'Cliente'}</p>
+                <p className="text-xs text-slate-600 mt-1 line-clamp-2">{v.produtos || ''}</p>
               </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Até</label>
-                <input type="date" className="w-full border border-slate-200 rounded-xl p-2.5 text-sm" value={filtros.dataFim} onChange={(e) => setFiltros((prev) => ({ ...prev, dataFim: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">% comissão</label>
-                <select className="w-full border border-slate-200 rounded-xl p-2.5 text-sm bg-white" value={filtros.percentual} onChange={(e) => setFiltros((prev) => ({ ...prev, percentual: e.target.value }))}>
-                  <option value="">Todas</option>
-                  {[6, 5, 4, 3].map((n) => <option key={n} value={n}>{n}%</option>)}
-                </select>
-              </div>
-              <div className="flex items-end gap-2">
-                <button
-                  onClick={() => setFiltros({ cliente: '', dataIni: '', dataFim: '', percentual: '' })}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all text-sm"
-                >
-                  Limpar
-                </button>
+              <div className="text-right shrink-0">
+                <p className="text-xs font-semibold text-slate-500">Entrega</p>
+                <p className="text-sm font-extrabold text-slate-800">
+                  {v.dataEntrega ? new Date(v.dataEntrega).toLocaleDateString('pt-BR') : 'Futura'}
+                </p>
               </div>
             </div>
-          )}
+
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleEdit?.(v)}
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 active:scale-[0.98] transition"
+              >
+                Editar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleMarcarEntregue?.(v)}
+                className="flex-1 rounded-xl bg-emerald-600 text-white px-3 py-2 text-xs font-extrabold shadow-sm hover:bg-emerald-700 active:scale-[0.98] transition"
+              >
+                Marcar entregue
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const DashboardView = () => (
+  <div className="pb-28">
+    <div className="space-y-6">
+      <KPICardsV5
+        metricas={metricas}
+        goal={goal}
+        onChangeGoal={setGoal}
+        onPrevMonth={handlePrevMonth}
+        onNextMonth={handleNextMonth}
+        monthLabel={monthLabel}
+      />
+
+      {/* Filtros */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="text"
+            placeholder="Pesquisar cliente..."
+            className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            value={filtros.cliente}
+            onChange={(e) => setFiltros({ ...filtros, cliente: e.target.value })}
+          />
+          <button
+            type="button"
+            onClick={() => setShowFilters(!showFilters)}
+            className={[
+              "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 font-extrabold shadow-sm transition active:scale-[0.98]",
+              showFilters
+                ? "bg-blue-600 text-white"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
+            ].join(" ")}
+          >
+            <Filter size={18} />
+            Filtros
+          </button>
+          <button
+            type="button"
+            onClick={() => setFiltros({ cliente: '', dataIni: '', dataFim: '', percentual: '' })}
+            className="inline-flex items-center justify-center rounded-2xl px-4 py-3 font-extrabold text-blue-600 hover:bg-blue-50 active:scale-[0.98] transition"
+          >
+            Limpar
+          </button>
         </div>
+
+        {showFilters && (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">De</label>
+              <input
+                type="date"
+                className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                value={filtros.dataIni}
+                onChange={(e) => setFiltros({ ...filtros, dataIni: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Até</label>
+              <input
+                type="date"
+                className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                value={filtros.dataFim}
+                onChange={(e) => setFiltros({ ...filtros, dataFim: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">% comissão</label>
+              <select
+                className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                value={filtros.percentual}
+                onChange={(e) => setFiltros({ ...filtros, percentual: e.target.value })}
+              >
+                <option value="">Todas</option>
+                {[6, 5, 4, 3].map((n) => (
+                  <option key={n} value={n}>
+                    {n}%
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-500">
+                Use filtros para refinar a lista.
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Conteúdo em 2 colunas: lista + sidebar Próximas Entregas */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
+        {/* Coluna esquerda */}
         <div className="space-y-4">
           <TabNavigatorV5
             activeTab={activeTab}
@@ -948,11 +1080,15 @@ END:VCALENDAR`;
           />
 
           {activeTab === 'vendas' && (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {vendasFiltradas.length === 0 && (
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center text-slate-500 font-medium">Nenhuma venda finalizada neste mês.</div>
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-500 shadow-sm">
+                  Nenhuma venda finalizada neste mês.
+                </div>
               )}
-              {vendasFiltradas.map((v) => <VendaCard key={v.id} v={v} />)}
+              {vendasFiltradas.map((v) => (
+                <VendaCard key={v.id} v={v} />
+              ))}
             </div>
           )}
 
@@ -975,126 +1111,75 @@ END:VCALENDAR`;
               onDelete={handleDelete}
             />
           )}
+
+          {/* Sidebar no mobile (abaixo) */}
+          <div className="lg:hidden">
+            <UpcomingDeliveries />
+          </div>
         </div>
 
-        {/* Sidebar Próximas Entregas */}
-        <div className="lg:order-2">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden sticky top-24">
-            <div className="p-4 border-b border-slate-100">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-600">Próximas Entregas</h3>
-            </div>
-            <div className="p-4 max-h-[420px] overflow-y-auto space-y-3">
-              {separarVendas.entregas.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-4">Nenhuma entrega agendada.</p>
-              ) : (
-                separarVendas.entregas.slice(0, 15).map((v) => {
-                  const dataEnt = v.tipoEntrega === 'Agendada' && v.dataEntrega ? new Date(v.dataEntrega + 'T00:00:00').toLocaleDateString('pt-BR') : 'Futura';
-                  return (
-                    <div key={v.id} className="flex justify-between items-start gap-2 p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-colors">
-                      <div className="min-w-0">
-                        <div className="font-semibold text-slate-800 truncate text-sm">{v.cliente}</div>
-                        <div className="text-xs text-slate-500">{dataEnt}</div>
-                      </div>
-                      <div className="text-right text-sm font-semibold text-slate-700 shrink-0">{formatBRL(v.valor)}</div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+        {/* Coluna direita (desktop) */}
+        <div className="hidden lg:block sticky top-24">
+          <UpcomingDeliveries />
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 
-  const ReportsView = () => (
-    <div className="py-6 pb-28">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-slate-800">Backup & Dados</h2>
-        <p className="text-sm text-slate-500 mt-1">Exporte ou importe suas vendas com segurança.</p>
-      </div>
+const ReportsView = () => (
+    <div className="pb-28 max-w-7xl mx-auto px-4 lg:px-6">
+      <h2 className="text-2xl font-extrabold mb-4">Backup & Dados</h2>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-        <button
-          onClick={handleBackup}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold shadow-md shadow-indigo-900/20 transition-all hover:shadow-lg active:scale-[0.99]"
-        >
+      <div className="bg-white border rounded-2xl p-4 space-y-3">
+        <button onClick={handleBackup} className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-extrabold shadow-sm">
           ☁️ Fazer Backup
         </button>
 
-        <label className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 py-4 rounded-2xl flex justify-center items-center gap-2 cursor-pointer font-bold transition-all">
+        <label className="w-full bg-indigo-50 border border-indigo-200 text-indigo-700 py-3 rounded-2xl flex justify-center cursor-pointer font-extrabold">
           📥 Restaurar Backup
           <input type="file" accept=".json" onChange={handleRestore} className="hidden" />
         </label>
 
-        <p className="text-xs text-center text-slate-500 pt-2">Versão Premium · Offline-first</p>
+        <p className="text-xs text-center text-gray-500">Versão: v5.0 (offline-first)</p>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-30 bg-gradient-to-r from-blue-700 via-blue-600 to-blue-700 text-white shadow-lg shadow-slate-900/5">
-        <div className="max-w-7xl mx-auto px-4 lg:px-6 py-5 flex items-center justify-between">
-          <div className="font-extrabold text-xl tracking-tight">Controle de Vendas</div>
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:block text-sm font-medium text-white/90">Admin</div>
-            <span className="text-xs bg-white/15 backdrop-blur px-3 py-1.5 rounded-full font-semibold border border-white/20">Premium</span>
+    <div className="min-h-screen bg-slate-50 text-slate-900 pb-safe">
+      <header className="sticky top-0 z-30 bg-gradient-to-r from-blue-700 via-blue-600 to-blue-700 text-white py-5 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 lg:px-6 flex items-center justify-between font-extrabold">
+          <div>
+            <div className="text-xl tracking-tight">Controle de Vendas</div>
+            <div className="text-xs text-white/80 font-semibold">Dashboard premium • Offline-first</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs bg-white/15 border border-white/20 px-3 py-1 rounded-full font-bold">Admin</span>
+            <span className="text-xs bg-blue-900/30 border border-white/15 px-3 py-1 rounded-full font-mono">v5.0</span>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 lg:px-6">
-        {view === 'dashboard' && DashboardView()}
-        {view === 'add' && (
-          <FormViewV5
-            editingId={editingId}
-            formData={formData}
-            setFormData={setFormData}
-            onSubmit={handleSave}
-            onCancel={() => {
-              setEditingId(null);
-              limparForm();
-              setView('dashboard');
-            }}
-            onTipoEntregaChange={handleTipoEntregaChange}
-            descontoOptions={descontoOptions}
-            pagamentoOptions={pagamentoOptions}
-            motivoPendenciaOptions={motivoPendenciaOptions}
-            formatBRL={formatBRL}
-            toMoney={toMoney}
-          />
-        )}
-        {view === 'reports' && ReportsView()}
+        {view === 'dashboard' && <DashboardView />}
+        {view === 'add' && <FormView />}
+        {view === 'reports' && <ReportsView />}
       </main>
 
-      {view !== 'add' && (
-        <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-[0_-10px_40px_rgba(0,0,0,0.08)]">
-          <div className="max-w-7xl mx-auto px-4 lg:px-6 flex justify-around items-center py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-            <button
-              onClick={() => { setView('dashboard'); setActiveTab('vendas'); }}
-              className={`p-4 rounded-2xl transition-all ${view === 'dashboard' ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
-              aria-label="Dashboard"
-            >
-              <BarChart size={26} strokeWidth={2} />
-            </button>
-            <button
-              onClick={() => { limparForm(); setEditingId(null); setView('add'); }}
-              className="bg-blue-600 text-white p-4 rounded-2xl -mt-10 shadow-lg shadow-blue-600/30 hover:shadow-xl hover:bg-blue-700 active:scale-95 transition-all border-4 border-white"
-              aria-label="Nova venda"
-            >
-              <Plus size={28} strokeWidth={2.5} />
-            </button>
-            <button
-              onClick={() => setView('reports')}
-              className={`p-4 rounded-2xl transition-all ${view === 'reports' ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
-              aria-label="Backup"
-            >
-              <List size={26} strokeWidth={2} />
-            </button>
-          </div>
-        </nav>
-      )}
+      <nav className="fixed bottom-0 w-full bg-white/95 backdrop-blur border-t border-slate-200 flex justify-around p-3 z-40 lg:hidden pb-6 shadow-[0_-8px_20px_-12px_rgba(15,23,42,0.35)]">
+        <button onClick={() => { setView('dashboard'); setActiveTab('vendas'); }} className={view === 'dashboard' ? 'text-blue-600' : 'text-gray-400'}>
+          <BarChart />
+        </button>
+
+        <button onClick={() => { limparForm(); setEditingId(null); setView('add'); }} className="bg-blue-600 text-white p-3 rounded-full -mt-8 shadow-lg active:scale-95 transition-transform">
+          <Plus />
+        </button>
+
+        <button onClick={() => setView('reports')} className={view === 'reports' ? 'text-blue-600' : 'text-gray-400'}>
+          <List />
+        </button>
+      </nav>
     </div>
   );
 }
