@@ -65,9 +65,10 @@ function App() {
     cliente: '',
     produto: '',
     valorTabela: '',
-    desconto: '',
-    valorFinal: '',
-    comissao: '',
+    desconto: '', // % selecionado (só sugestão)
+    valorVendido: '', // valor final negociado (livre)
+    valorFinal: '', // compatibilidade (salvo como valorVendido)
+    comissao: '', // % (3/4/5/6)
     dataPrevista: '',
     dataEntregue: '',
     pagamento: {
@@ -75,7 +76,8 @@ function App() {
       dataSinal: '',
       restante: '',
       dataRestante: '',
-      formaPagamento: 'dinheiro'
+      formaPagamento: 'dinheiro',
+      parcelas: '1x'
     },
     status: 'concluida',
     pendenciaMotivo: '',
@@ -105,37 +107,42 @@ function App() {
   };
 
   const calculateKPIs = () => {
-    const monthSales = sales.filter(s => {
-      const saleMonth = s.dataEntregue ? s.dataEntregue.substring(0, 7) : s.dataPrevista.substring(0, 7);
+    const monthSales = sales.filter((s) => {
+      const baseDate = (s?.dataPrevista || s?.dataEntregue || '').toString();
+      const saleMonth = baseDate ? baseDate.substring(0, 7) : activeMonth;
       return saleMonth === activeMonth;
     });
 
-    const vendido = monthSales
-      .filter(s => s.status === 'concluida')
-      .reduce((sum, s) => sum + (parseFloat(s.valorFinal) || 0), 0);
+    const getValorVendido = (s) => Number(s?.valorVendido ?? s?.valorFinal ?? 0) || 0;
+    const getDescontoReal = (s) => Number(s?.desconto ?? 0) || 0;
+    const getSinal = (s) => Number(s?.pagamento?.sinal ?? 0) || 0;
+    const getRestante = (s) => Number(s?.pagamento?.restante ?? 0) || 0;
+    const getComissaoValor = (s) =>
+      Number(s?.comissaoValor ?? (getValorVendido(s) * ((Number(s?.comissao ?? 0) || 0) / 100))) || 0;
 
-    const comissao = monthSales
-      .filter(s => s.status === 'concluida')
-      .reduce((sum, s) => sum + (parseFloat(s.comissao) || 0), 0);
+    // Vendido: soma de TODAS as vendas do mês (concluída, pendência, entrega futura, etc.)
+    const vendido = monthSales.reduce((sum, s) => sum + getValorVendido(s), 0);
 
-    const recebido = monthSales
-      .filter(s => s.status === 'concluida')
-      .reduce((sum, s) => {
-        const sinal = parseFloat(s.pagamento?.sinal) || 0;
-        const restante = parseFloat(s.pagamento?.restante) || 0;
-        const dataRestante = s.pagamento?.dataRestante;
-        if (dataRestante && dataRestante.substring(0, 7) <= activeMonth) {
-          return sum + sinal + restante;
-        }
-        return sum + sinal;
-      }, 0);
+    // Descontos: desconto REAL (tabela - vendido) do mês
+    const descontos = monthSales.reduce((sum, s) => sum + getDescontoReal(s), 0);
 
-    const pendencias = monthSales
-      .filter(s => s.status === 'pendencia')
-      .reduce((sum, s) => sum + (parseFloat(s.valorFinal) || 0), 0);
+    // Pendências: soma do que falta receber (restante) do mês
+    const pendencias = monthSales.reduce((sum, s) => sum + getRestante(s), 0);
 
-    const descontos = monthSales
-      .reduce((sum, s) => sum + (parseFloat(s.desconto) || 0), 0);
+    // Recebido: soma do que entrou (sinal + restante quitado) acumulado até o mês
+    const recebido = monthSales.reduce((sum, s) => {
+      const sinal = getSinal(s);
+      const restante = getRestante(s);
+
+      // Se está totalmente pago (restante 0), consideramos valor vendido como recebido
+      if (restante <= 0) return sum + getValorVendido(s);
+
+      // Caso contrário, consideramos pelo menos o sinal como recebido
+      return sum + sinal;
+    }, 0);
+
+    // Comissão: calculada sobre o valor vendido, baseada no % selecionado
+    const comissao = monthSales.reduce((sum, s) => sum + getComissaoValor(s), 0);
 
     return { vendido, comissao, recebido, pendencias, descontos };
   };
@@ -147,21 +154,37 @@ function App() {
 
     // Converte valores monetários com tolerância a vírgula/ponto
     const valorTabelaNum = parseBRL(formData.valorTabela);
-    const descontoPercent = Number(formData.descontoPercent) || 0;
-    const descontoNum = valorTabelaNum * (descontoPercent / 100);
-    const valorFinalNum = Math.max(valorTabelaNum - descontoNum, 0);
+
+    // Desconto % é apenas sugestão visual; o valor vendido é livre
+    const descontoPercent = Number(formData.desconto) || 0;
+    const descontoSugeridoNum = valorTabelaNum * (descontoPercent / 100);
+
+    // Se o usuário não preencher Valor vendido, usamos (tabela - desconto sugerido) como padrão
+    const valorVendidoNum =
+      formData.valorVendido?.toString().trim() !== ''
+        ? parseBRL(formData.valorVendido)
+        : Math.max(valorTabelaNum - descontoSugeridoNum, 0);
+
+    // Desconto REAL (diferença tabela - vendido). Esse é o que conta nos relatórios.
+    const descontoRealNum = Math.max(valorTabelaNum - valorVendidoNum, 0);
 
     // Pagamento: sinal (pago agora) e restante calculado automaticamente
     const sinalNum = parseBRL(formData.pagamento?.sinal);
-    const restanteNum = Math.max(valorFinalNum - sinalNum, 0);
+    const restanteNum = Math.max(valorVendidoNum - sinalNum, 0);
+
+    const comissaoPercent = Number(formData.comissao) || 0;
+    const comissaoValorNum = valorVendidoNum * (comissaoPercent / 100);
 
     const saleData = {
       ...formData,
       valorTabela: valorTabelaNum,
-      descontoPercent,
-      desconto: descontoNum,
-      valorFinal: valorFinalNum,
-      comissao: Number(formData.comissao) || 0,
+      descontoPercent, // sugestão escolhida
+      descontoSugerido: descontoSugeridoNum,
+      desconto: descontoRealNum, // DESCONTO REAL (tabela - vendido)
+      valorVendido: valorVendidoNum,
+      valorFinal: valorVendidoNum, // compatibilidade
+      comissao: comissaoPercent, // percent
+      comissaoValor: comissaoValorNum, // valor em R$
       pagamento: {
         ...formData.pagamento,
         sinal: sinalNum,
@@ -188,9 +211,9 @@ function App() {
       produto: '',
       // Mantemos como string para digitação suave; convertemos no submit
       valorTabela: '',
-      // Desconto agora é controlado por porcentagem (0/10/15/20)
-      descontoPercent: 0,
-      desconto: '',
+      // % é só sugestão visual
+      desconto: '0',
+      valorVendido: '',
       valorFinal: '',
       // Comissão: opções 3/4/5/6
       comissao: '6',
@@ -202,36 +225,47 @@ function App() {
         restante: '',
         dataRestante: '',
         formaPagamento: 'dinheiro',
-        parcelas: 1
+        parcelas: '1x'
       },
       status: 'concluida',
       pendenciaMotivo: '',
       entregaFuturaMotivo: '',
       observacoes: ''
     });
-    setEditingSale(null);
   };
 
   const handleEdit = (sale) => {
     setEditingSale(sale);
-    // Normaliza para não quebrar vendas antigas
+
+    const valorTabela = Number(sale?.valorTabela ?? 0);
+    const valorVendido = Number(sale?.valorVendido ?? sale?.valorFinal ?? 0);
+
     setFormData({
       ...sale,
+      cliente: sale?.cliente ?? '',
       produto: sale?.produto ?? '',
-      valorTabela: sale?.valorTabela ?? '',
-      descontoPercent: Number.isFinite(sale?.descontoPercent) ? sale.descontoPercent : 0,
-      desconto: sale?.desconto ?? '',
-      valorFinal: sale?.valorFinal ?? '',
-      comissao: sale?.comissao ?? '6',
+      valorTabela: valorTabela ? formatCurrency(valorTabela) : '',
+      // % sugerido
+      desconto: String(Number(sale?.descontoPercent ?? 0)),
+      valorVendido: valorVendido ? formatCurrency(valorVendido) : '',
+      valorFinal: valorVendido ? formatCurrency(valorVendido) : '',
+      comissao: String(Number(sale?.comissao ?? 6)),
+      dataPrevista: sale?.dataPrevista ?? '',
+      dataEntregue: sale?.dataEntregue ?? '',
       pagamento: {
-        sinal: sale?.pagamento?.sinal ?? '',
+        sinal: sale?.pagamento?.sinal ? formatCurrency(Number(sale.pagamento.sinal)) : '',
         dataSinal: sale?.pagamento?.dataSinal ?? '',
-        restante: sale?.pagamento?.restante ?? '',
+        restante: sale?.pagamento?.restante ? formatCurrency(Number(sale.pagamento.restante)) : '',
         dataRestante: sale?.pagamento?.dataRestante ?? '',
-        formaPagamento: sale?.pagamento?.formaPagamento ?? 'dinheiro',
-        parcelas: sale?.pagamento?.parcelas ?? 1
-      }
+        formaPagamento: sale?.pagamento?.formaPagamento ?? sale?.pagamento?.formaPagamento ?? 'dinheiro',
+        parcelas: String(sale?.pagamento?.parcelas ?? 1)
+      },
+      status: sale?.status ?? 'concluida',
+      pendenciaMotivo: sale?.pendenciaMotivo ?? '',
+      entregaFuturaMotivo: sale?.entregaFuturaMotivo ?? '',
+      observacoes: sale?.observacoes ?? ''
     });
+
     setShowModal(true);
   };
 
@@ -279,11 +313,15 @@ function App() {
 
   // ---------- Derivados do formulário (para UI) ----------
   const valorTabelaNumUI = parseBRL(formData.valorTabela);
-  const descontoPercentUI = Number(formData.descontoPercent) || 0;
+  const descontoPercentUI = Number(formData.desconto) || 0;
   const descontoNumUI = valorTabelaNumUI * (descontoPercentUI / 100);
-  const valorFinalNumUI = Math.max(valorTabelaNumUI - descontoNumUI, 0);
+  const valorVendidoNumUI =
+    formData.valorVendido?.toString().trim() !== ''
+      ? parseBRL(formData.valorVendido)
+      : Math.max(valorTabelaNumUI - descontoNumUI, 0);
+  const descontoRealUI = Math.max(valorTabelaNumUI - valorVendidoNumUI, 0);
   const sinalNumUI = parseBRL(formData.pagamento?.sinal);
-  const restanteNumUI = Math.max(valorFinalNumUI - sinalNumUI, 0);
+  const restanteNumUI = Math.max(valorVendidoNumUI - sinalNumUI, 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -536,8 +574,8 @@ function App() {
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Desconto aplicado</label>
                     <select
-                      value={formData.descontoPercent}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, descontoPercent: e.target.value }))}
+                      value={formData.desconto}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, desconto: e.target.value }))}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value={0}>Sem desconto</option>
@@ -545,16 +583,25 @@ function App() {
                       <option value={15}>15%</option>
                       <option value={20}>20%</option>
                     </select>
-                    <p className="mt-1 text-xs text-slate-500">Desconto: <span className="font-semibold">{formatCurrency(descontoNumUI)}</span></p>
+                    <p className="mt-1 text-xs text-slate-500">Desconto sugerido: <span className="font-semibold">{formatCurrency(descontoNumUI)}</span> • Desconto real: <span className="font-semibold">{formatCurrency(descontoRealUI)}</span></p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Valor vendido (R$)</label>
                     <input
                       type="text"
-                      readOnly
-                      value={formatCurrency(valorFinalNumUI).replace('R$', '').trim()}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 text-slate-900"
+                      value={formData.valorVendido}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, valorVendido: e.target.value }))
+                      }
+                      onBlur={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          valorVendido: e.target.value.trim() === '' ? '' : formatBRLInput(e.target.value)
+                        }))
+                      }
+                      placeholder={formatCurrency(valorVendidoNumUI).replace('R$', '').trim()}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
 
